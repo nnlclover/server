@@ -23,7 +23,6 @@
 #include <mutex>
 #include <condition_variable>
 
-
 const int timeout = 20;
 
 void sbs(int sock, bool state)
@@ -32,29 +31,37 @@ void sbs(int sock, bool state)
 	ioctl(sock, FIONBIO, &u);
 }
 
-std::deque<int> myQueue; // Очередь
-std::mutex mtx;          // Мьютекс для доступа к очереди
-std::condition_variable cv; // Условная переменная для ожидания новых элементов
+struct sock_st
+{
+	unsigned long last_time = 0;
+	sockaddr remote_addr{};
+	socklen_t addr_remote_len = 0;
+	int sock = -1, state = -1;
+	uint16_t waited_size = -1;
+	std::string stream;
+};
 
+std::deque<int> myQueue;	// Очередь
+std::mutex mtx;				// Мьютекс для доступа к очереди
+std::condition_variable cv; // Условная переменная для ожидания новых элементов
 
 void worker()
 {
-	while(true)
+	while (true)
 	{
-
 	}
 }
 
 int main()
 {
-	std::thread pipe_thread(worker); 
+	std::thread pipe_thread(worker);
 
 	sockaddr_in main_addr;
 	memset(&main_addr, 0, sizeof(main_addr));
 	main_addr.sin_addr.s_addr = INADDR_ANY;
 	main_addr.sin_family = AF_INET;
 	main_addr.sin_port = htons(3425);
-	
+
 	int sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (sock < 0)
 	{
@@ -63,11 +70,11 @@ int main()
 	}
 
 	int optval = 1;
- 	if (setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,&optval,sizeof(int)) == -1) 
-	{ 
-        perror("setsockopt") ;
-        exit(-1) ;
-    }
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) == -1)
+	{
+		perror("setsockopt");
+		exit(-1);
+	}
 
 	if (bind(sock, (sockaddr *)&main_addr, sizeof(main_addr)))
 	{
@@ -81,21 +88,11 @@ int main()
 
 	char *read_buffer = (char *)malloc(1024);
 
-	struct sock_st
-	{
-		unsigned long last_time = 0;
-		sockaddr remote_addr{};
-		socklen_t addr_remote_len = 0;
-		int sock = -1, state = -1;
-		uint16_t waited_size = -1;
-		std::string stream;
-	};
-
 	sbs(sock, true);
-	std::vector<sock_st*> socket_list;
+	std::vector<sock_st *> socket_list;
 
 	int i, _sock, res;
-	
+
 	pollfd polling;
 
 	while (true)
@@ -111,7 +108,7 @@ int main()
 		{
 			if (polling.revents & POLLIN || polling.revents & POLLRDNORM)
 			{
-				sock_st* client = new sock_st;
+				sock_st *client = new sock_st;
 				_sock = accept(sock, (sockaddr *)&client->remote_addr, &client->addr_remote_len);
 				if (_sock < 0)
 				{
@@ -166,12 +163,13 @@ int main()
 						int offset;
 						switch (read_buffer[1])
 						{
-						case 0x08: 
+						case 0x08:
 							offset = 4;
 							memcpy(&st.waited_size, &read_buffer[2], 2);
 							st.stream = "";
 						case 0x09: // add to last packet
-							if(offset != 4) offset = 2;
+							if (offset != 4)
+								offset = 2;
 
 							if (st.waited_size > res - offset)
 							{
@@ -196,13 +194,13 @@ int main()
 			}
 		}
 
-		for(auto& obj : socket_list)
+		for (auto &obj : socket_list)
 		{
-			if(obj->state == 0x01)
+			if (obj->state == 0x01)
 			{
 				obj->state = 0x22;
 				std::cout << obj->stream << std::endl;
-				//send(obj->sock, "ok", 2, 0);
+				// send(obj->sock, "ok", 2, 0);
 			}
 		}
 	}
